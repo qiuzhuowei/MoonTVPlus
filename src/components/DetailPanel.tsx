@@ -59,6 +59,7 @@ interface DetailData {
   tmdbId?: number;
   mediaType?: 'movie' | 'tv';
   seasonNumber?: number;
+  seriesTitle?: string;
 }
 
 interface Episode {
@@ -550,7 +551,7 @@ const DetailPanel: React.FC<DetailPanelProps> = ({
         if (extractedSeasonNumber && mediaType === 'tv') {
           try {
             const seasonResponse = await fetch(
-              `/api/tmdb/seasons?id=${detailId}&season=${extractedSeasonNumber}`
+              `/api/tmdb/episodes?id=${detailId}&season=${extractedSeasonNumber}`
             );
             if (seasonResponse.ok) {
               seasonData = await seasonResponse.json();
@@ -561,15 +562,20 @@ const DetailPanel: React.FC<DetailPanelProps> = ({
         }
 
         setDetailData({
-          title: mediaType === 'movie' ? detailResult.title : detailResult.name,
+          title:
+            mediaType === 'movie'
+              ? detailResult.title
+              : seasonData?.name
+                ? `${detailResult.name} ${seasonData.name}`
+                : detailResult.name,
           originalTitle:
             mediaType === 'movie' ? detailResult.original_title : detailResult.original_name,
           year:
             mediaType === 'movie'
               ? detailResult.release_date?.substring(0, 4)
-              : detailResult.first_air_date?.substring(0, 4),
-          poster: detailResult.poster_path
-            ? processImageUrl(getTMDBImageUrl(detailResult.poster_path, 'w500'))
+              : seasonData?.air_date?.substring(0, 4) || detailResult.first_air_date?.substring(0, 4),
+          poster: (seasonData?.poster_path || detailResult.poster_path)
+            ? processImageUrl(getTMDBImageUrl(seasonData?.poster_path || detailResult.poster_path, 'w500'))
             : poster,
           rating: detailResult.vote_average
             ? {
@@ -584,7 +590,9 @@ const DetailPanel: React.FC<DetailPanelProps> = ({
           duration: detailResult.runtime ? `${detailResult.runtime}分钟` : undefined,
           episodesCount: seasonData?.episodes?.length || detailResult.number_of_episodes,
           releaseDate:
-            mediaType === 'movie' ? detailResult.release_date : detailResult.first_air_date,
+            mediaType === 'movie'
+              ? detailResult.release_date
+              : seasonData?.air_date || detailResult.first_air_date,
           status: detailResult.status,
           tagline: detailResult.tagline,
           seasons: detailResult.number_of_seasons,
@@ -592,6 +600,7 @@ const DetailPanel: React.FC<DetailPanelProps> = ({
           tmdbId: detailId,
           mediaType: mediaType,
           seasonNumber: extractedSeasonNumber,
+          seriesTitle: mediaType === 'tv' ? detailResult.name : undefined,
         });
         return;
       }
@@ -689,7 +698,7 @@ const DetailPanel: React.FC<DetailPanelProps> = ({
       if (extractedSeasonNumber && mediaType === 'tv') {
         try {
           const seasonResponse = await fetch(
-            `/api/tmdb/seasons?id=${detailId}&season=${extractedSeasonNumber}`
+            `/api/tmdb/episodes?id=${detailId}&season=${extractedSeasonNumber}`
           );
           if (seasonResponse.ok) {
             seasonData = await seasonResponse.json();
@@ -700,15 +709,20 @@ const DetailPanel: React.FC<DetailPanelProps> = ({
       }
 
       setDetailData({
-        title: mediaType === 'movie' ? detailResult.title : detailResult.name,
+        title:
+          mediaType === 'movie'
+            ? detailResult.title
+            : seasonData?.name
+              ? `${detailResult.name} ${seasonData.name}`
+              : detailResult.name,
         originalTitle:
           mediaType === 'movie' ? detailResult.original_title : detailResult.original_name,
         year:
           mediaType === 'movie'
             ? detailResult.release_date?.substring(0, 4)
-            : detailResult.first_air_date?.substring(0, 4),
-        poster: detailResult.poster_path
-          ? processImageUrl(getTMDBImageUrl(detailResult.poster_path, 'w500'))
+            : seasonData?.air_date?.substring(0, 4) || detailResult.first_air_date?.substring(0, 4),
+        poster: (seasonData?.poster_path || detailResult.poster_path)
+          ? processImageUrl(getTMDBImageUrl(seasonData?.poster_path || detailResult.poster_path, 'w500'))
           : poster,
         rating: detailResult.vote_average
           ? {
@@ -723,7 +737,9 @@ const DetailPanel: React.FC<DetailPanelProps> = ({
         duration: detailResult.runtime ? `${detailResult.runtime}分钟` : undefined,
         episodesCount: seasonData?.episodes?.length || detailResult.number_of_episodes,
         releaseDate:
-          mediaType === 'movie' ? detailResult.release_date : detailResult.first_air_date,
+          mediaType === 'movie'
+            ? detailResult.release_date
+            : seasonData?.air_date || detailResult.first_air_date,
         status: detailResult.status,
         tagline: detailResult.tagline,
         seasons: detailResult.number_of_seasons,
@@ -731,6 +747,7 @@ const DetailPanel: React.FC<DetailPanelProps> = ({
         tmdbId: detailId,
         mediaType: mediaType,
         seasonNumber: extractedSeasonNumber,
+        seriesTitle: mediaType === 'tv' ? detailResult.name : undefined,
       });
       setCurrentSource('tmdb');
       return;
@@ -872,7 +889,9 @@ const DetailPanel: React.FC<DetailPanelProps> = ({
       // 更新季度元信息
       setDetailData(prev => prev ? {
         ...prev,
-        title: episodesData.name || season?.name || prev.title,
+        title: (episodesData.name || season?.name)
+          ? `${prev.seriesTitle || prev.title} ${episodesData.name || season?.name}`
+          : prev.title,
         intro: episodesData.overview || season?.overview || prev.overview,
         poster: season?.poster_path ? getTMDBImageUrl(season.poster_path, 'w500') : prev.poster,
         releaseDate: episodesData.air_date || season?.air_date || prev.releaseDate,
