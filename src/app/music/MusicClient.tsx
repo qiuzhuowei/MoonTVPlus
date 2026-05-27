@@ -238,6 +238,11 @@ export default function MusicClient({ children: _children }: { children?: React.
   const [showPlaylist, setShowPlaylist] = useState(false);
   const [playlistIndex, setPlaylistIndex] = useState(-1); // 当前在播放列表中的索引
   const [showQualityMenu, setShowQualityMenu] = useState(false); // 音质选择菜单
+  const [showSleepTimerMenu, setShowSleepTimerMenu] = useState(false); // 睡眠定时菜单
+  const [sleepTimerEndAt, setSleepTimerEndAt] = useState<number | null>(null); // 睡眠定时结束时间
+  const [sleepTimerRemaining, setSleepTimerRemaining] = useState(0); // 睡眠定时剩余秒数
+  const [customSleepHours, setCustomSleepHours] = useState(0); // 自定义睡眠定时小时
+  const [customSleepMinutes, setCustomSleepMinutes] = useState(30); // 自定义睡眠定时分钟
   const [showSidebarDrawer, setShowSidebarDrawer] = useState(false); // 左侧抽屉菜单
   const [showVolumeSlider, setShowVolumeSlider] = useState(false); // 音量滑块显示状态
   const [pendingSongToPlay, setPendingSongToPlay] = useState<{ platform: string; id: string } | null>(null); // 待播放的歌曲信息
@@ -281,6 +286,8 @@ export default function MusicClient({ children: _children }: { children?: React.
 
   const audioRef = useRef<HTMLAudioElement>(null);
   const lyricsContainerRef = useRef<HTMLDivElement>(null);
+  const sleepHoursPickerRef = useRef<HTMLDivElement>(null);
+  const sleepMinutesPickerRef = useRef<HTMLDivElement>(null);
   const lastSaveTimeRef = useRef<number>(0);
   const restoredTimeRef = useRef<number>(0);
   const songStartTimeRef = useRef<number>(0); // 歌曲开始播放的时间戳
@@ -1457,6 +1464,116 @@ export default function MusicClient({ children: _children }: { children?: React.
     return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
+  const sleepPickerItemHeight = 40;
+  const sleepPickerVisibleCount = 5;
+  const sleepPickerHeight = sleepPickerItemHeight * sleepPickerVisibleCount;
+  const clampSleepPickerValue = (value: number, max: number) => Math.max(0, Math.min(max, value));
+
+  const formatSleepTimer = (seconds: number) => {
+    if (!Number.isFinite(seconds) || seconds <= 0) return '已关闭';
+    const mins = Math.floor(seconds / 60);
+    const secs = Math.floor(seconds % 60);
+    if (mins >= 60) {
+      const hours = Math.floor(mins / 60);
+      const restMins = mins % 60;
+      return `${hours}:${restMins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+    }
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  };
+
+  const setSleepTimer = (minutes: number) => {
+    const endAt = Date.now() + minutes * 60 * 1000;
+    setSleepTimerEndAt(endAt);
+    setSleepTimerRemaining(minutes * 60);
+    setShowSleepTimerMenu(false);
+    setToast({
+      message: `已设置 ${minutes} 分钟后暂停播放`,
+      type: 'success',
+      onClose: () => setToast(null),
+    });
+  };
+
+  const setCustomSleepTimer = () => {
+    const totalMinutes = customSleepHours * 60 + customSleepMinutes;
+    if (totalMinutes <= 0) {
+      setToast({
+        message: '请选择大于 0 的定时时长',
+        type: 'info',
+        onClose: () => setToast(null),
+      });
+      return;
+    }
+    setSleepTimer(totalMinutes);
+  };
+
+  const cancelSleepTimer = () => {
+    setSleepTimerEndAt(null);
+    setSleepTimerRemaining(0);
+    setShowSleepTimerMenu(false);
+    setToast({
+      message: '已关闭睡眠定时',
+      type: 'info',
+      onClose: () => setToast(null),
+    });
+  };
+
+  const handleSleepHourScroll = (e: React.UIEvent<HTMLDivElement>) => {
+    const nextValue = clampSleepPickerValue(Math.round(e.currentTarget.scrollTop / sleepPickerItemHeight), 12);
+    if (nextValue !== customSleepHours) setCustomSleepHours(nextValue);
+  };
+
+  const handleSleepMinuteScroll = (e: React.UIEvent<HTMLDivElement>) => {
+    const nextValue = clampSleepPickerValue(Math.round(e.currentTarget.scrollTop / sleepPickerItemHeight), 59);
+    if (nextValue !== customSleepMinutes) setCustomSleepMinutes(nextValue);
+  };
+
+  useEffect(() => {
+    if (!sleepTimerEndAt) return;
+
+    const updateSleepTimer = () => {
+      const remaining = Math.max(0, Math.ceil((sleepTimerEndAt - Date.now()) / 1000));
+      setSleepTimerRemaining(remaining);
+
+      if (remaining > 0) return;
+
+      setSleepTimerEndAt(null);
+      setShowSleepTimerMenu(false);
+
+      if (audioRef.current && !audioRef.current.paused) {
+        audioRef.current.pause();
+        setIsPlaying(false);
+        savePlayState();
+      }
+
+      setToast({
+        message: '睡眠定时结束，已暂停播放',
+        type: 'info',
+        onClose: () => setToast(null),
+      });
+    };
+
+    updateSleepTimer();
+    const timerId = window.setInterval(updateSleepTimer, 1000);
+    return () => window.clearInterval(timerId);
+  }, [sleepTimerEndAt]);
+
+  useEffect(() => {
+    if (!showSleepTimerMenu) return;
+
+    const scrollToSelected = (el: HTMLDivElement | null, value: number) => {
+      if (!el) return;
+      window.requestAnimationFrame(() => {
+        el.scrollTop = value * sleepPickerItemHeight;
+      });
+    };
+
+    // 只在弹窗打开时定位一次。不要把 customSleepHours/customSleepMinutes
+    // 放进依赖，否则滚动触发 setState 后又反向改 scrollTop，会造成频闪。
+    scrollToSelected(sleepHoursPickerRef.current, customSleepHours);
+    scrollToSelected(sleepMinutesPickerRef.current, customSleepMinutes);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showSleepTimerMenu]);
+
   useEffect(() => {
     currentTimeRef.current = currentTime;
   }, [currentTime]);
@@ -2214,6 +2331,25 @@ export default function MusicClient({ children: _children }: { children?: React.
                   {getQualityLabel()}
                 </button>
                 <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setShowSleepTimerMenu(true);
+                  }}
+                  className={`relative transition-colors ${
+                    sleepTimerEndAt ? 'text-green-500 hover:text-green-400' : 'text-zinc-500 hover:text-white'
+                  }`}
+                  title={sleepTimerEndAt ? `睡眠定时：${formatSleepTimer(sleepTimerRemaining)}` : '睡眠定时'}
+                >
+                  <svg className="w-4 h-4 md:w-5 md:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 6v6l4 2m6-2a10 10 0 11-20 0 10 10 0 0120 0z" />
+                  </svg>
+                  {sleepTimerEndAt && (
+                    <span className="absolute -bottom-2 left-1/2 -translate-x-1/2 text-[8px] font-semibold leading-none text-green-400">
+                      {Math.max(1, Math.ceil(sleepTimerRemaining / 60))}
+                    </span>
+                  )}
+                </button>
+                <button
                   onClick={toggleMode}
                   className="text-zinc-500 hover:text-white transition-colors"
                   title={playMode === 'loop' ? '列表循环' : playMode === 'single' ? '单曲循环' : '随机播放'}
@@ -2498,6 +2634,152 @@ export default function MusicClient({ children: _children }: { children?: React.
                   <p className="text-zinc-600 text-xs mt-2">播放歌曲后会自动添加到列表</p>
                 </div>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Sleep Timer Menu */}
+      {showSleepTimerMenu && (
+        <div
+          className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[110] flex items-end justify-center"
+          onClick={() => setShowSleepTimerMenu(false)}
+        >
+          <div
+            className="w-full max-w-md bg-zinc-900 rounded-t-2xl border-t border-white/10 shadow-2xl animate-slide-up"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="relative p-4 border-b border-white/10">
+              <h3 className="text-lg font-bold text-white text-center">睡眠定时</h3>
+              <button
+                type="button"
+                onClick={() => setShowSleepTimerMenu(false)}
+                className="absolute right-3 top-3 flex h-8 w-8 items-center justify-center rounded-full bg-white/10 text-zinc-300 transition-colors hover:bg-white/20 hover:text-white"
+                title="关闭"
+              >
+                <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+              <p className="mt-1 text-center text-xs text-zinc-500">
+                {sleepTimerEndAt ? `剩余 ${formatSleepTimer(sleepTimerRemaining)} 后暂停播放` : '选择倒计时时长，到点后自动暂停'}
+              </p>
+            </div>
+
+            <div className="p-4 grid grid-cols-2 gap-2">
+              {[15, 30, 45, 60, 90, 120].map((minutes) => (
+                <button
+                  key={minutes}
+                  onClick={() => setSleepTimer(minutes)}
+                  className="rounded-lg bg-white/5 p-4 text-center text-sm font-medium text-white transition-colors hover:bg-green-500/20 hover:text-green-300"
+                >
+                  {minutes} 分钟
+                </button>
+              ))}
+            </div>
+
+            <div className="mx-4 mb-4 rounded-xl border border-white/10 bg-white/[0.03] p-4">
+              <div className="mb-3 text-center text-sm font-medium text-white">自定义时间</div>
+              <div className="grid grid-cols-2 gap-3">
+                {[
+                  {
+                    label: '小时',
+                    value: customSleepHours,
+                    ref: sleepHoursPickerRef,
+                    onScroll: handleSleepHourScroll,
+                    items: Array.from({ length: 13 }, (_, hour) => hour),
+                  },
+                  {
+                    label: '分钟',
+                    value: customSleepMinutes,
+                    ref: sleepMinutesPickerRef,
+                    onScroll: handleSleepMinuteScroll,
+                    items: Array.from({ length: 60 }, (_, minute) => minute),
+                  },
+                ].map((picker) => (
+                  <div key={picker.label} className="block">
+                    <span className="mb-2 block text-center text-xs text-zinc-500">{picker.label}</span>
+                    <div className="relative">
+                      <div
+                        ref={picker.ref}
+                        onScroll={picker.onScroll}
+                        className="scrollbar-hide overflow-y-auto rounded-xl border border-white/10 bg-zinc-800/80 py-[80px] text-white"
+                        style={{
+                          height: `${sleepPickerHeight}px`,
+                          scrollbarWidth: 'none',
+                          msOverflowStyle: 'none',
+                          scrollSnapType: 'y mandatory',
+                        }}
+                      >
+                        {picker.items.map((item) => {
+                          const isActive = item === picker.value;
+                          return (
+                            <button
+                              key={item}
+                              type="button"
+                              onClick={() => {
+                                if (picker.label === '小时') {
+                                  setCustomSleepHours(item);
+                                  if (sleepHoursPickerRef.current) {
+                                    sleepHoursPickerRef.current.scrollTo({
+                                      top: item * sleepPickerItemHeight,
+                                      behavior: 'smooth',
+                                    });
+                                  }
+                                } else {
+                                  setCustomSleepMinutes(item);
+                                  if (sleepMinutesPickerRef.current) {
+                                    sleepMinutesPickerRef.current.scrollTo({
+                                      top: item * sleepPickerItemHeight,
+                                      behavior: 'smooth',
+                                    });
+                                  }
+                                }
+                              }}
+                              className={`flex w-full items-center justify-center text-sm transition-colors ${
+                                isActive ? 'text-green-400' : 'text-zinc-400'
+                              }`}
+                              style={{ height: `${sleepPickerItemHeight}px`, scrollSnapAlign: 'center' }}
+                            >
+                              {item.toString().padStart(2, '0')}
+                            </button>
+                          );
+                        })}
+                      </div>
+                      <div className="pointer-events-none absolute inset-x-0 top-1/2 -translate-y-1/2 border-y border-green-500/40 bg-green-500/10" style={{ height: `${sleepPickerItemHeight}px` }} />
+                      <div className="pointer-events-none absolute inset-x-0 top-0 h-1/2 bg-gradient-to-b from-zinc-900/95 to-transparent" />
+                      <div className="pointer-events-none absolute inset-x-0 bottom-0 h-1/2 bg-gradient-to-t from-zinc-900/95 to-transparent" />
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <button
+                onClick={setCustomSleepTimer}
+                className="mt-4 w-full rounded-lg bg-green-500 p-3 text-sm font-medium text-white transition-colors hover:bg-green-600 disabled:cursor-not-allowed disabled:bg-zinc-700 disabled:text-white"
+                disabled={customSleepHours === 0 && customSleepMinutes === 0}
+              >
+                {customSleepHours === 0 && customSleepMinutes === 0
+                  ? '请选择定时时长'
+                  : `设置 ${customSleepHours > 0 ? `${customSleepHours} 小时` : ''}${
+                      customSleepMinutes > 0 ? `${customSleepMinutes} 分钟` : ''
+                    }后暂停`}
+              </button>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2 px-4 pb-4">
+              <button
+                onClick={() => setShowSleepTimerMenu(false)}
+                className="w-full rounded-lg border border-white/10 bg-white/5 p-3 text-sm font-medium text-zinc-300 transition-colors hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                返回
+              </button>
+              <button
+                onClick={cancelSleepTimer}
+                className="w-full rounded-lg border border-white/10 bg-white/5 p-3 text-sm font-medium text-zinc-300 transition-colors hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50"
+                disabled={!sleepTimerEndAt}
+              >
+                关闭定时
+              </button>
             </div>
           </div>
         </div>
