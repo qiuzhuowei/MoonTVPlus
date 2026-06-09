@@ -48,6 +48,7 @@ import {
 } from '@/lib/db.client';
 import { getDoubanDetail } from '@/lib/douban.client';
 import { isEpisodeHiddenByFilter, normalizeEpisodeFilterConfig } from '@/lib/episode-filter';
+import { appendSpecialSourceParam, isSpecialSourcesEnabledOnDevice } from '@/lib/special-source.client';
 import {
   buildEpisodeProgressContentKey,
   loadLocalEpisodeProgress,
@@ -3766,7 +3767,7 @@ function PlayPageClient() {
       fileNameParam?: string
     ): Promise<SearchResult[]> => {
       try {
-        let url = `/api/source-detail?source=${source}&id=${id}&title=${encodeURIComponent(title)}`;
+        let url = appendSpecialSourceParam(`/api/source-detail?source=${source}&id=${id}&title=${encodeURIComponent(title)}`);
         // 如果有fileName参数（小雅源），添加到URL
         if (fileNameParam) {
           url += `&fileName=${encodeURIComponent(fileNameParam)}`;
@@ -3934,7 +3935,7 @@ function PlayPageClient() {
       }
 
       try {
-        const cacheKey = `search_cache_${query.trim()}`;
+        const cacheKey = `search_cache_${query.trim()}${isSpecialSourcesEnabledOnDevice() ? '_special' : ''}`;
         const cached = sessionStorage.getItem(cacheKey);
         if (!cached) return null;
 
@@ -3955,7 +3956,7 @@ function PlayPageClient() {
       if (typeof window === 'undefined' || !query.trim()) return;
 
       try {
-        const cacheKey = `search_cache_${query.trim()}`;
+        const cacheKey = `search_cache_${query.trim()}${isSpecialSourcesEnabledOnDevice() ? '_special' : ''}`;
         const payload: SearchCachePayload = {
           status: 'complete',
           results,
@@ -4011,7 +4012,7 @@ function PlayPageClient() {
 
         // 没有缓存或只有 partial 缓存时，重新请求完整搜索结果
         const response = await fetch(
-          `/api/search?q=${encodeURIComponent(query.trim())}`
+          appendSpecialSourceParam(`/api/search?q=${encodeURIComponent(query.trim())}`)
         );
         if (!response.ok) {
           throw new Error('搜索失败');
@@ -4583,7 +4584,7 @@ function PlayPageClient() {
       // 这类源统一通过详情接口补全播放数据
       if (isLazyDetailSource(newDetail.source) && (!newDetail.episodes || newDetail.episodes.length === 0)) {
         try {
-          const detailResponse = await fetch(`/api/source-detail?source=${newSource}&id=${newId}&title=${encodeURIComponent(newTitle)}`);
+          const detailResponse = await fetch(appendSpecialSourceParam(`/api/source-detail?source=${newSource}&id=${newId}&title=${encodeURIComponent(newTitle)}`));
           if (detailResponse.ok) {
             const detailData = await detailResponse.json();
             if (!detailData) {

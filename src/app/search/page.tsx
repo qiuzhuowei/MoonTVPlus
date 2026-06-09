@@ -32,6 +32,7 @@ import {
   subscribeToDataUpdates,
 } from '@/lib/db.client';
 import { SearchResult } from '@/lib/types';
+import { appendSpecialSourceParam, isSpecialSourcesEnabledOnDevice } from '@/lib/special-source.client';
 import { processImageUrl } from '@/lib/utils';
 
 import AcgSearch from '@/components/AcgSearch';
@@ -127,7 +128,8 @@ function SearchPageClient() {
 
   // 生成缓存键
   const getCacheKey = (query: string) => {
-    return `search_cache_${query.trim()}`;
+    const suffix = isSpecialSourcesEnabledOnDevice() ? '_special' : '';
+    return `search_cache_${query.trim()}${suffix}`;
   };
 
   // 从 sessionStorage 获取完整缓存的搜索结果（partial 只给播放页快速启动使用）
@@ -1249,7 +1251,7 @@ function SearchPageClient() {
       if (currentFluidSearch) {
         // 流式搜索：打开新的流式连接
         const es = new EventSource(
-          `/api/search/ws?q=${encodeURIComponent(trimmed)}`
+          appendSpecialSourceParam(`/api/search/ws?q=${encodeURIComponent(trimmed)}`)
         );
         eventSourceRef.current = es;
 
@@ -1355,7 +1357,7 @@ function SearchPageClient() {
         };
       } else {
         // 传统搜索：使用普通接口
-        fetch(`/api/search?q=${encodeURIComponent(trimmed)}`)
+        fetch(appendSpecialSourceParam(`/api/search?q=${encodeURIComponent(trimmed)}`))
           .then((response) => response.json())
           .then((data) => {
             if (currentQueryRef.current !== trimmed) return;
